@@ -132,6 +132,89 @@ class Tour{
    static deleteTour = (req,res)=>{
     res.status(200).json({status:'success',message:"successfully deleted"})
  }
+
+ static getTourStats = async (req, res) => {
+  try {
+      const stats = await TourModal.aggregate([
+          {
+              $match: { rattingAverage: { $gt: 3 } }
+          },
+          {
+              $group: {
+                  _id: '$difficulty',
+                   totalTours: { $sum: 1 } ,
+                   totalRating:{$sum:'$rattingQuantity'},
+                   avgRating:{$avg:'$price'},
+                   avgPrice:{$avg: '$price'},
+                   minPrice:{$min:'$price'},
+                   maxPrice:{$max:'$price'},
+                   avgRatingRounded: { $round: [{ $avg: '$price' }, 2] } 
+              }
+          },{
+            $sort:{avgPrice:1}
+          }
+      ],{ maxTimeMS: 30000 });
+
+      res.status(200).json({ data: stats });
+  } catch (err) {
+      console.error(err);
+      res.status(404).json({
+          status: false,
+          data: null,
+          message: "Something went wrong"
+      });
+  }
+}
+
+static getMonthlyPlans=async(req,res)=>{
+  try{
+    const year =req.params.year 
+    console.warn(year,req.params.year)
+    const stats = await TourModal.aggregate([
+    {$unwind:'$startDates'},
+
+    {
+      $match: {
+        startDates: {
+          $gte: new Date(`${year}-01-01`),
+          $lt:  new Date(`${year}-12-31`)
+        }
+      }
+    },
+    {
+      $group: {
+        _id: { $substr: ["$startDates", 5, 2] }, // Extract year-month part from the date
+        count: { $sum: 1 } ,// Count the documents for each month
+        tours:{$push:'$name'},
+      }
+    },{
+      $addFields:{month:"$_id"}
+    },{
+      $project:{
+        _id:0
+      }
+    },{
+      $sort:{
+        count:-1
+      }
+    }
+
+    ])
+    res.status(200).json({
+      data:stats
+    })
+
+  }
+  catch(err){
+    console.error(err);
+      res.status(404).json({
+          status: false,
+          data: null,
+          message: "Something went wrong"
+      });
+  }
+}
+
 }
 
 module.exports = Tour
