@@ -73,24 +73,25 @@ class Tour{
         }
     }
     
+    static catchAsync=(fn)=>{
+      return (req,res,next)=>{
+        fn(req,res,next).catch(err=>next(err))
+      }
+    }
 
-     static createTour = async(req,res)=>{
-        try{
+     static createTour = Tour.catchAsync(async(req,res)=>{
+     
            const newTour = await  TourModal.create(req.body)
            res.status(201).json({
             success: true,
             tour:newTour
            })
-        }catch(err){
-            console.warn(err)
-            res.status(404).json({
-                success: false,
-                message:"something went wrong"
-               })
-        } 
-    
-    
-}
+        
+        })
+     
+
+
+
 
     static updateTour = async (req,res)=>{
         try{
