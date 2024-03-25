@@ -10,7 +10,7 @@ app.use('/api/v1/tours',tourRoutes)
 app.use('/api/v1/users',userRouter)
 
 app.all('*',(req,res,next)=>{
-    const myError = new CustomError('Custom error message', 404, 'Not Found');
+    const myError = new CustomError('No route is found for this request', 404, 'Not Found');
     next(myError)
 })
 

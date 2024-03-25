@@ -1,4 +1,6 @@
 
+const { catchAsync } = require('../../utils/catchAsync');
+const { CustomError } = require('../ApiErrors');
 const ApiFeatures = require('../apiFeatures');
 const TourModal = require('../model/tourModel');
 // class ApiFeatures{
@@ -55,8 +57,7 @@ class Tour{
         req.query.fields='name,duration,summary,price'
         next()
     }
-    static getAllTours = async (req, res) => {
-        try {
+    static getAllTours = catchAsync(async (req, res) => {       
              let updatedQuery = new ApiFeatures(TourModal.find(),req.query).filter().sort().limitFeilds().paginatingData().query
             let tours = await updatedQuery
             res.status(200).json({
@@ -64,22 +65,16 @@ class Tour{
                 result: tours.length,
                 data: tours
             });
-        } catch (err) {
-            console.warn(err);
-            res.status(500).json({
-                success: false,
-                message: "Something went wrong"
-            });
-        }
-    }
+        
+    })
     
-    static catchAsync=(fn)=>{
-      return (req,res,next)=>{
-        fn(req,res,next).catch(err=>next(err))
-      }
-    }
+    // static catchAsync=(fn)=>{
+    //   return (req,res,next)=>{
+    //     fn(req,res,next).catch(err=>next(err))
+    //   }
+    // }
 
-     static createTour = Tour.catchAsync(async(req,res)=>{
+     static createTour = catchAsync(async(req,res,next)=>{
      
            const newTour = await  TourModal.create(req.body)
            res.status(201).json({
@@ -93,49 +88,41 @@ class Tour{
 
 
 
-    static updateTour = async (req,res)=>{
-        try{
-            const updatedTOur = await TourModal.findByIdAndUpdate(req.params.id,{name:"osama sajid"},{new:true,runValidators:true})
+    static updateTour = catchAsync(async (req,res)=>{
+            const updatedTOur = await TourModal.findByIdAndUpdate(req.params.id,req.body,{new:true,runValidators:true})
+            if(!updatedTOur){
+             return next(new CustomError('No tour found with that ID',404))
+            }
              res.status(200).json({
                 success:true,
                 data:updatedTOur
              })
-        }
-        catch(err){
-          res.status(404).json({
-            status:false,
-            message:"something went wrong"
-          })
-        }
-   
- }
+ })
  
-    static getTour= async(req,res)=>{
-        console.warn(req.params.id)
-        try{
+    static getTour= catchAsync(async(req,res,next)=>{
           const tour = await TourModal.findById(req.params.id)
-          console.warn(typeof tour,tour)
+          if(!tour){
+            let err = new CustomError('No tour found with that ID',404)
+            return next(err)
+          }
           res.status(200).json({
             status:true,
             data:tour
           })
-        }catch(err){
-            console.warn(err)
-            res.status(404).json({
-                status:false,
-                data:null,
-                message: "something went wrog"
-            })
-        } 
     
- }
+ })
 
-   static deleteTour = (req,res)=>{
+   static deleteTour = catchAsync(async (req,res)=>{
+ 
+    const tour = await TourModal.deleteOne(req.params)
+    if(!tour){
+     return next(new CustomError('No tour found with that ID',404))
+    }
+    
     res.status(200).json({status:'success',message:"successfully deleted"})
- }
+ })
 
- static getTourStats = async (req, res) => {
-  try {
+ static getTourStats = catchAsync(async (req, res) => {
       const stats = await TourModal.aggregate([
           {
               $match: { rattingAverage: { $gt: 3 } }
@@ -157,20 +144,11 @@ class Tour{
       ],{ maxTimeMS: 30000 });
 
       res.status(200).json({ data: stats });
-  } catch (err) {
-      console.error(err);
-      res.status(404).json({
-          status: false,
-          data: null,
-          message: "Something went wrong"
-      });
-  }
-}
+})
 
-static getMonthlyPlans=async(req,res)=>{
-  try{
+static getMonthlyPlans=catchAsync(async(req,res)=>{
+  
     const year =req.params.year 
-    console.warn(year,req.params.year)
     const stats = await TourModal.aggregate([
     {$unwind:'$startDates'},
 
@@ -205,16 +183,7 @@ static getMonthlyPlans=async(req,res)=>{
       data:stats
     })
 
-  }
-  catch(err){
-    console.error(err);
-      res.status(404).json({
-          status: false,
-          data: null,
-          message: "Something went wrong"
-      });
-  }
-}
+})
 
 }
 

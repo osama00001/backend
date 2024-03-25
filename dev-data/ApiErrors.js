@@ -13,6 +13,7 @@ class CustomError extends Error {
       this.name = this.constructor.name;
       // Capture the stack trace, excluding the constructor call and the class instantiation
       Error.captureStackTrace(this, this.constructor);
+      this.isOperational=true
     }
   }
 
