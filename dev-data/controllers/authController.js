@@ -3,7 +3,13 @@ const User = require("../model/userModal");
 
 
 const signup = catchAsync(async(req,res,next)=>{
-    const newUser = await User.create(req.body)
+    let payload={
+        name:req.body.name,
+        email:req.body.email,
+        password:req.body.password,
+        confirmPassword:req.body.confirmPassword
+    }
+    const newUser = await User.create(payload)
     res.status(200).json({
         status: 'success',
         data:{
