@@ -23,10 +23,13 @@ const userSchema = new mongoose.Schema({
         type: String,
         required: true,
         trim: true,
-        minlength: 8
+        minlength: 8,
+        select:false
+
     },
     confirmPassword: {
         type: String,
+        select:false,
         validate: {
             validator: function(value) {
                 // Assuming 'this' refers to the document being saved
@@ -35,6 +38,7 @@ const userSchema = new mongoose.Schema({
             message: 'Passwords do not match'
         }
     }
+
 });
 
 userSchema.pre('save', async function(next) {

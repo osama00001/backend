@@ -1,3 +1,5 @@
+const { CustomError } = require("../ApiErrors")
+
 const developmentError=(err,res)=>{
     res.status(err.statusCode).json({
         status:err.status,
@@ -19,11 +21,27 @@ const productionError=(err,res)=>{
     }
     
 
+    const handleInvalidToken=(err,res)=>{
+        let newErr=new CustomError('invalid token',401,'fail')
+         developmentError(newErr,res)
+    }
+    const handleExpiryToken=(err,res)=>{
+        let newErr=new CustomError('Token expired',401,'fail')
+         developmentError(newErr,res)
+    }
 const errorHandler = (err,req,res,next)=>{
     err.status = err.status || 'error'
     err.statusCode = err.statusCode || 500
     if(process.env.NODE_ENV=='development'){
-        developmentError(err,res)
+        if(err.name==='JsonWebTokenError'){
+            handleInvalidToken(err,res)
+        }else if(err.name==='TokenExpiredError'){
+            handleExpiryToken(err,res)
+        }
+        else{
+            developmentError(err,res)
+        }
+        
     }else if(process.env.NODE_ENV=='production'){
         productionError(err,res)
     }
