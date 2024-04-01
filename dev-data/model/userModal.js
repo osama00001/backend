@@ -38,8 +38,26 @@ const userSchema = new mongoose.Schema({
             message: 'Passwords do not match'
         }
     },
-    isPasswordChanged:Date
+    isPasswordChanged:Date,
+    role:{
+        type:String,
+        enum:['user','admin','guide','lead-guide'],
+        default:'user'
+    },
+    resetPasswordToken:String,
+    resetPasswordExpires:Date,
+    
+   
+    
 
+
+});
+userSchema.pre('save', async function(next) {
+    if (!this.isModified('password')||this.isNew) {
+        return next();
+    }
+    this.isPasswordChanged=Date.now()
+    next();
 });
 
 userSchema.pre('save', async function(next) {

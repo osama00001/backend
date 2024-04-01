@@ -4,6 +4,9 @@ const User = require("../model/userModal");
 const bcrypt =require ('bcrypt')
 const { CustomError } = require("../ApiErrors");
 const {promisify} = require('util')
+const crypto = require('crypto');
+const sendEmail = require("../../utils/Email");
+const sendEmails = require("../../utils/Email");
 
 const login=catchAsync(async(req,res,next)=>{
     const { email, password } = req.body;
@@ -22,9 +25,6 @@ const login=catchAsync(async(req,res,next)=>{
 
     const token =await jwt.sign({userId:user._id},process.env.JWT_SECRET,{ expiresIn: '1h' })
 
-    
-
-
     res.status(200).json({
         status: 'success',
         userToken:token,
@@ -38,7 +38,8 @@ const signup = catchAsync(async(req,res,next)=>{
         email:req.body.email,
         password:req.body.password,
         confirmPassword:req.body.confirmPassword,
-        isPasswordChanged:req.body.isPasswordChanged
+        isPasswordChanged:req.body.isPasswordChanged,
+        role:req.body.role
     }
     const aleradyExist = await User.find({email:req.body.email})
     if(aleradyExist.length>0){
@@ -65,13 +66,11 @@ const protectRoute = catchAsync(async(req,res,next)=>{
 
   if (token && token.startsWith("Bearer")) {
     const decodedToken = await promisify(jwt.verify)(token.split(' ')[1], process.env.JWT_SECRET);
-    console.warn(decodedToken)
     if(decodedToken){
       freshUser = await User.findById(decodedToken.userId)
       if(!freshUser){
         return next(new CustomError('This user is no longer exist',404,'fail'))
       }
-      console.warn(freshUser,freshUser.passwordChangedAt,decodedToken.iat,freshUser.passwordChangedAt && decodedToken.iat < Math.floor(freshUser.passwordChangedAt.getTime() / 1000))
       if (freshUser.isPasswordChanged && decodedToken.iat < Math.floor(freshUser.isPasswordChanged.getTime() / 1000)) {
         // Password was changed after the token was issued
         return next(new CustomError('Password has been changed ',404,'fail'))
@@ -82,7 +81,118 @@ const protectRoute = catchAsync(async(req,res,next)=>{
     return next(new CustomError("User is not allowed, Please login to get access",401,'fail'))
   }
  
-//    req.user= freshUser
+   req.user= freshUser
+   console.warn(freshUser)
   next()
 })
-module.exports={signup,login, protectRoute}
+
+const restrictedTo=(...roles)=>{
+    return (req, res, next) => {
+        console.warn(roles,req.user.role)
+        if(!roles.includes(req.user.role)){
+            next(new CustomError("user do not have access to perform this action",403,'Fail'))
+        }
+        next(); 
+    };
+
+}
+
+const forgotPassword = catchAsync(async(req,res,next)=>{
+    
+    const { email } = req.body;
+
+        // Check if the email exists in the database
+        const user = await User.findOne({ email });
+        if (!user) {
+            next(new CustomError("User do not exist",404))
+        }
+        // Generate a unique reset token
+        const resetToken = crypto.randomBytes(20).toString('hex');
+
+        // Update user with reset crypted token and expiry date
+        user.resetPasswordToken = crypto.createHash('sha256').update(resetToken).digest('hex')
+        user.resetPasswordExpires = Date.now() + 3600000; // Token expires in 1 hour
+        await user.save({ validateBeforeSave: false });
+
+        const resetURl=`${req.protocol}://${req.get('host')}/api/v1/resetPassword/${resetToken}`
+        const message =` forgot your passwor ? please click on a link to change your password \n 
+        ${resetURl}`
+        try{
+
+        await sendEmail({
+           email:'osamasajid38@gmail.com',
+           subject:'Reset password!',
+           message
+        })
+        res.status(200).json({
+            status:'success',
+            message:"Reset token has benn send!",
+            user:user
+        })
+    }catch(err){
+        user.resetPasswordToken=undefined
+        user.resetPasswordExpires=undefined
+        await user.save({ validateBeforeSave: false });
+       return next(new CustomError('something wrong with sending Email',500,'fail'))
+    }
+        
+
+})
+
+const resetPassword=catchAsync(async(req,res,next)=>{
+    console.warn(req.params.resetToken)
+//step1 get user based on that token
+  let resetPasswordToken=crypto.createHash('sha256').update(req.params.resetToken).digest('hex')
+ const currentUser = await User.findOne({resetPasswordToken,resetPasswordExpires:{$gt:Date.now()}})
+ if(!currentUser){
+    return next(new CustomError('User is not found',404,'fail'))
+ }
+ //step2 check token expirytime 
+ currentUser.password=req.body.password,
+ currentUser.name=req.body.name
+ currentUser.confirmPassword=req.body.confirmPassword
+ currentUser.resetPasswordToken=undefined
+ currentUser.resetPasswordExpires=undefined
+ await currentUser.save()
+
+ //step 3 paswordReset flag to true and set time (password modified || document is new).
+
+ //setp4 send back jwt
+ const token =await jwt.sign({userId:currentUser._id},process.env.JWT_SECRET,{ expiresIn: '1h' })
+
+ res.status(200).json({
+     status: 'success',
+     userToken:token,
+    
+ })
+
+
+})
+
+const updatePassword=catchAsync(async(req,res,next)=>{
+    //step1 find user by email
+     
+    const currentUser=await User.findOne({email:req.user.email}).select("+password")
+    //step2 check password valid or not
+    console.warn(req.body.password, currentUser.password)
+    const isPasswordValid = await bcrypt.compare(req.body.password, currentUser.password);
+    console.warn(isPasswordValid)
+    if(!isPasswordValid){
+    return next(new CustomError('Your password is incorrect',404,'fail'))
+    }
+    //step3 add new password
+    currentUser.password = req.body.newPassword;
+    currentUser.confirmPassword = req.body.confirmPassword
+    // currentUser.isPasswordChanged = Date
+    await currentUser.save()
+
+    const token = jwt.sign({ userId: currentUser._id }, process.env.JWT_SECRET, { expiresIn: '1h' })
+    res.status(200).json({
+        status: 'true',
+        token
+    })
+
+    
+
+})
+module.exports={signup,login, protectRoute,restrictedTo,forgotPassword,resetPassword,updatePassword}
