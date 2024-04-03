@@ -8,28 +8,66 @@ const crypto = require('crypto');
 const sendEmail = require("../../utils/Email");
 const sendEmails = require("../../utils/Email");
 
+const sendUserToken=(res,token,user)=>{
+
+    const expirationTime = new Date(Date.now() + process.env.COOKIE_EXPIRE_DATE); // 1 hour from now
+
+    // Set JWT token in a cookie
+    res.cookie('jwt', token, {
+        httpOnly: true, // Make cookie accessible only through HTTP(S) requests, not JavaScript
+        secure: process.env.NODE_ENV === 'production', // Only send cookie over HTTPS in production
+        expires: expirationTime, // Set cookie expiration time
+        sameSite: 'strict' // Enforce same-site cookie attribute for added security
+    });
+    
+    if(Object.keys(user).length>0){
+        res.status(200).json({
+            status: 'success',
+            userToken:token,
+            data:{
+                user
+            }
+        })
+    }else{
+        res.status(200).json({
+            status: 'success',
+            userToken:token,
+           
+        })
+    }
+    
+}
+
+const createJWTToken=async (newUser)=>{
+    return await jwt.sign({ userId: newUser._id }, process.env.JWT_SECRET, { expiresIn: '1h' })
+}
+
 const login=catchAsync(async(req,res,next)=>{
+    //step 1 check Email and password
+
     const { email, password } = req.body;
     if(!email || !password){
      return next(new CustomError("username or password is required",404))
     }
+
+    //step 2 check user exist or not 
+
     const user = await User.findOne({email}).select('+password')
     if(!user){
         return next(new CustomError("User do not exist",404))
     }
+    
+    //step 3 check user's passwords matching or not 
 
     const isPasswordValid = await bcrypt.compare(password, user.password);
     if (!isPasswordValid) {
      return next(new CustomError("Username or password is incorrect!",401))
     }
+    
+    //step 4 send token
 
-    const token =await jwt.sign({userId:user._id},process.env.JWT_SECRET,{ expiresIn: '1h' })
-
-    res.status(200).json({
-        status: 'success',
-        userToken:token,
-       
-    })
+    const token =await createJWTToken(user)
+    sendUserToken(res,token,{})
 })
 
 const signup = catchAsync(async(req,res,next)=>{
@@ -46,14 +84,9 @@ const signup = catchAsync(async(req,res,next)=>{
         return next(new CustomError("User already exist",401,'fail'))
     }
     const newUser = await User.create(payload)
-    const token = jwt.sign({ userId: newUser._id }, process.env.JWT_SECRET, { expiresIn: '1h' })
-    res.status(200).json({
-        status: 'success',
-        userToken:token,
-        data:{
-            user:newUser
-        }
-    })
+    const token = await createJWTToken(newUser)
+    sendUserToken(res,token,newUser)
+    
 })
 
 const protectRoute = catchAsync(async(req,res,next)=>{
@@ -65,6 +98,7 @@ const protectRoute = catchAsync(async(req,res,next)=>{
      let freshUser=''
 
   if (token && token.startsWith("Bearer")) {
+   
     const decodedToken = await promisify(jwt.verify)(token.split(' ')[1], process.env.JWT_SECRET);
     if(decodedToken){
       freshUser = await User.findById(decodedToken.userId)
@@ -82,13 +116,13 @@ const protectRoute = catchAsync(async(req,res,next)=>{
   }
  
    req.user= freshUser
-   console.warn(freshUser)
+   console.warn("current user",freshUser)
   next()
 })
 
 const restrictedTo=(...roles)=>{
     return (req, res, next) => {
-        console.warn(roles,req.user.role)
+        // console.warn(roles,req.user.role)
         if(!roles.includes(req.user.role)){
             next(new CustomError("user do not have access to perform this action",403,'Fail'))
         }
@@ -129,6 +163,7 @@ const forgotPassword = catchAsync(async(req,res,next)=>{
             message:"Reset token has benn send!",
             user:user
         })
+
     }catch(err){
         user.resetPasswordToken=undefined
         user.resetPasswordExpires=undefined
@@ -140,16 +175,16 @@ const forgotPassword = catchAsync(async(req,res,next)=>{
 })
 
 const resetPassword=catchAsync(async(req,res,next)=>{
-    console.warn(req.params.resetToken)
+    // console.warn(req.params.resetToken)
 //step1 get user based on that token
   let resetPasswordToken=crypto.createHash('sha256').update(req.params.resetToken).digest('hex')
  const currentUser = await User.findOne({resetPasswordToken,resetPasswordExpires:{$gt:Date.now()}})
  if(!currentUser){
-    return next(new CustomError('User is not found',404,'fail'))
+    return next(new CustomError('User is not found or token is expired',404,'fail'))
  }
  //step2 check token expirytime 
  currentUser.password=req.body.password,
- currentUser.name=req.body.name
+//  currentUser.name=req.body.name
  currentUser.confirmPassword=req.body.confirmPassword
  currentUser.resetPasswordToken=undefined
  currentUser.resetPasswordExpires=undefined
@@ -158,13 +193,9 @@ const resetPassword=catchAsync(async(req,res,next)=>{
  //step 3 paswordReset flag to true and set time (password modified || document is new).
 
  //setp4 send back jwt
- const token =await jwt.sign({userId:currentUser._id},process.env.JWT_SECRET,{ expiresIn: '1h' })
+ const token =await createJWTToken(currentUser)
+sendUserToken(res,token,{})
 
- res.status(200).json({
-     status: 'success',
-     userToken:token,
-    
- })
 
 
 })
@@ -174,9 +205,9 @@ const updatePassword=catchAsync(async(req,res,next)=>{
      
     const currentUser=await User.findOne({email:req.user.email}).select("+password")
     //step2 check password valid or not
-    console.warn(req.body.password, currentUser.password)
+    // console.warn(req.body.password, currentUser.password)
     const isPasswordValid = await bcrypt.compare(req.body.password, currentUser.password);
-    console.warn(isPasswordValid)
+    // console.warn(isPasswordValid)
     if(!isPasswordValid){
     return next(new CustomError('Your password is incorrect',404,'fail'))
     }
@@ -186,11 +217,12 @@ const updatePassword=catchAsync(async(req,res,next)=>{
     // currentUser.isPasswordChanged = Date
     await currentUser.save()
 
-    const token = jwt.sign({ userId: currentUser._id }, process.env.JWT_SECRET, { expiresIn: '1h' })
-    res.status(200).json({
-        status: 'true',
-        token
-    })
+    const token = await createJWTToken(currentUser)
+    // res.status(200).json({
+    //     status: 'true',
+    //     token
+    // })
+    sendUserToken(res,token,{})
 
     
 
