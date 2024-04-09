@@ -12,7 +12,7 @@ mongoose.connect(DB)
     // You can now start interacting with your MongoDB database
   })
   .catch((err) => {
-    console.error('Error occurred while connecting to MongoDB:', err);
+    console.error('Error occurred while connecting to MongoDB: ', err);
   });
 
 
